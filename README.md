@@ -1,0 +1,1 @@
+Interactive design tool for a MEMS diffraction grating using electrostatic comb‑drive actuation. Streamlit UI lets users vary fingers, gaps, springs, pitch, materials, and wavelength while computing force, displacement, resonance, diffraction angles, dispersion, tuning range, efficiency, and fabrication steps for spectroscopy. Includes validation!

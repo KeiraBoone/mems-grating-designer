@@ -216,39 +216,6 @@ grating_uniformity = st.sidebar.slider(
     min_value=0.5, max_value=1.0, value=0.95, step=0.05
 )
 
-# 
-
-def show_cantilever_diagram():
-    fig, ax = plt.subplots(figsize=(4, 1.6))
-    ax.plot([0, 1], [0, 0], lw=6)
-    ax.plot([1, 1.1], [0, -0.2], lw=2)
-    ax.text(0.0, 0.1, "Fixed", fontsize=9)
-    ax.text(1.05, -0.25, "Force", fontsize=9)
-    ax.set_xlim(-0.1, 1.3)
-    ax.set_ylim(-0.4, 0.3)
-    ax.axis("off")
-    st.pyplot(fig)
-
-def show_combdrive_diagram():
-    fig, ax = plt.subplots(figsize=(4, 1.8))
-    for i in range(5):
-        ax.plot([0, 0.4], [i*0.2, i*0.2], lw=3)
-        ax.plot([0.6, 1.0], [i*0.2+0.1, i*0.2+0.1], lw=3)
-    ax.text(0.05, 1.1, "Fixed comb", fontsize=8)
-    ax.text(0.65, 1.1, "Moving comb", fontsize=8)
-    ax.arrow(0.7, 0.0, 0.2, 0, head_width=0.05, head_length=0.05)
-    ax.text(0.75, -0.15, "Motion", fontsize=8)
-    ax.axis("off")
-    st.pyplot(fig)
-
-def show_grating_diagram():
-    fig, ax = plt.subplots(figsize=(4, 1.8))
-    for i in range(8):
-        ax.plot([i*0.1, i*0.1], [0, 1], lw=2)
-    ax.text(0.05, 1.1, "Pitch Λ", fontsize=8)
-    ax.arrow(0.1, 1.05, 0.1, 0, head_width=0.05, head_length=0.03)
-    ax.axis("off")
-    st.pyplot(fig)
 
 # ============================================================================
 # CORE FUNCTIONS
@@ -323,6 +290,14 @@ def calculate_fabrication_feasibility(g, L, w):
         recs.append("Beam length > 300 μm: May need serpentine routing")
     return issues, recs
 
+# Unit-converted helpers for step-by-step math
+w_beam_m = w_beam * 1e-6
+t_thickness_m = t_thickness * 1e-6
+L_support_m = L_support * 1e-6
+g_gap_m = g_gap * 1e-6
+lambda_m = wavelength * 1e-9
+Lambda_m = Lambda_pitch * 1e-6
+
 # ============================================================================
 # CALCULATIONS
 # ============================================================================
@@ -364,6 +339,26 @@ E_field = V_applied / g_gap
 F_per_beam = F_elec / n_springs
 stress_beam = calculate_stress_in_beam(F_per_beam, w_beam * 1e-6, t_thickness * 1e-6, L_support * 1e-6)
 stress_ratio = stress_beam / sigma_yield
+# Extra mechanical calculations
+I_beam = (w_beam_m * t_thickness_m**3) / 12  # Area moment of inertia
+compliance = 1 / k_total                     # m/N
+strain_max = stress_beam / E_silicon         # unitless
+safety_factor = sigma_yield / stress_beam if stress_beam > 0 else np.inf
+
+# Max allowable force before yield (from bending stress formula)
+F_max_yield = (2 * w_beam_m * t_thickness_m**2 * sigma_yield) / (3 * L_support_m)
+
+# Max displacement before yield
+x_max_yield = F_max_yield / k_total
+
+# Max voltage before yield (comb-drive force equation inverted)
+V_max_yield = np.sqrt((2 * F_max_yield * g_gap_m) / (n_fingers * epsilon_0 * t_thickness_m))
+
+# Spring energy stored at current displacement
+U_spring = 0.5 * k_total * x_disp**2
+
+# Angular resonant frequency
+omega_n = 2 * np.pi * f_resonant
 
 fab_issues, fab_recommendations = calculate_fabrication_feasibility(g_gap, L_support, w_beam)
 
@@ -387,55 +382,264 @@ st.divider()
 # SIMPLE TABS (MECH / OPTICAL / ELECTRICAL / FABRICATION / VALIDATION / SUMMARY)
 # ============================================================================
 
-tabs = st.tabs(["Mechanical", "Optical", "Electrical", "Fabrication", "Validation", "Summary"])
+tabs = st.tabs(["Mechanical", "Optical", "Electrical", "Fabrication", "Validation", "Summary", "Design Solver"])
 
 with tabs[0]:
     st.subheader("Spring Stiffness")
     st.latex(r"k = \frac{3Ewt^3}{4L^3}")
 
-    with st.expander("How this stiffness is calculated"):
-        st.markdown("Beam stiffness from Euler–Bernoulli theory. Thickness dominates (t³).")
-        show_cantilever_diagram()
+    with st.expander("Show calculation steps (stiffness)"):
+        st.code(f"""
+k_single = (3*E*w*t^3)/(4*L^3)
+= (3*{E_silicon:.3e}*{w_beam_m:.3e}*{t_thickness_m:.3e}^3)/(4*{L_support_m:.3e}^3)
+= {k_single:.3e} N/m
+
+k_total = k_single * n_springs
+= {k_single:.3e} * {n_springs:.0f}
+= {k_total:.3e} N/m
+        """)
 
     st.write(f"Spring stiffness: {k_total:.2f} N/m")
     st.write(f"Displacement: {x_disp*1e6:.3f} μm")
     st.write(f"Max stress: {stress_beam/1e6:.2f} MPa")
 
+    with st.expander("Show calculation steps (stress)"):
+        st.code(f"""
+σ_max = (3*F*L)/(2*w*t^2)
+
+F_per_beam = {F_per_beam:.3e} N
+L = {L_support_m:.3e} m
+w = {w_beam_m:.3e} m
+t = {t_thickness_m:.3e} m
+
+σ_max = (3*{F_per_beam:.3e}*{L_support_m:.3e})/(2*{w_beam_m:.3e}*{t_thickness_m:.3e}^2)
+= {stress_beam:.3e} Pa
+= {stress_beam/1e6:.2f} MPa
+        """)
+
     st.subheader("Force Balance")
     st.latex(r"F_e = kx")
 
-    with st.expander("Why F = kx is used"):
-        st.markdown("Hooke’s law: spring restoring force proportional to displacement.")
-        show_cantilever_diagram()
+    with st.expander("Show calculation steps (force balance)"):
+        st.code(f"""
+x = F_e / k
+= ({F_elec:.3e}) / ({k_total:.3e})
+= {x_disp:.3e} m
+= {x_disp*1e6:.3f} μm
+        """)
+
+    st.subheader("Resonant Frequency")
+    st.latex(r"f = \frac{1}{2\pi}\sqrt{\frac{k}{m}}")
+
+    with st.expander("Show calculation steps (frequency)"):
+        st.code(f"""
+f = (1/2π)*sqrt(k/m)
+= (1/2π)*sqrt({k_total:.3e} / ({rho_mass:.3e}e-6))
+= {f_resonant:.3f} Hz
+ω_n = 2πf = {omega_n:.3f} rad/s
+        """)
+
+    st.subheader("Advanced Mechanical Metrics")
+    st.write(f"Moment of inertia I: {I_beam:.3e} m⁴")
+    st.write(f"Compliance (1/k): {compliance:.3e} m/N")
+    st.write(f"Max strain: {strain_max:.3e}")
+    st.write(f"Safety factor: {safety_factor:.2f}")
+
+    with st.expander("Show calculation steps (strain + safety)"):
+        st.code(f"""
+strain = σ/E
+= {stress_beam:.3e} / {E_silicon:.3e}
+= {strain_max:.3e}
+
+Safety factor = σ_yield / σ_max
+= {sigma_yield:.3e} / {stress_beam:.3e}
+= {safety_factor:.2f}
+        """)
+
+    st.subheader("Yield‑Limit Displacement & Voltage")
+    st.write(f"Max force before yield: {F_max_yield:.3e} N")
+    st.write(f"Max displacement before yield: {x_max_yield*1e6:.2f} μm")
+    st.write(f"Max voltage before yield: {V_max_yield:.1f} V")
+
+    with st.expander("Show calculation steps (yield limits)"):
+        st.code(f"""
+F_max = (2*w*t^2*σ_yield)/(3*L)
+= (2*{w_beam_m:.3e}*{t_thickness_m:.3e}^2*{sigma_yield:.3e})/(3*{L_support_m:.3e})
+= {F_max_yield:.3e} N
+
+x_max = F_max / k
+= {F_max_yield:.3e} / {k_total:.3e}
+= {x_max_yield:.3e} m = {x_max_yield*1e6:.2f} μm
+
+V_max = sqrt((2*F_max*g)/(n*ε0*t))
+= {V_max_yield:.2f} V
+        """)
+
+    st.subheader("Stored Mechanical Energy")
+    st.write(f"Spring energy: {U_spring:.3e} J")
+
+    with st.expander("Show calculation steps (energy)"):
+        st.code(f"""
+U = 1/2 * k * x^2
+= 0.5 * {k_total:.3e} * ({x_disp:.3e})^2
+= {U_spring:.3e} J
+        """)
 
 with tabs[1]:
+    st.header("Optical Analysis")
+
+    # Local unit conversions for step-by-step math
+    lambda_m = wavelength * 1e-9
+    Lambda_m = Lambda_pitch * 1e-6
+    L_det = 0.01  # 1 cm detector distance
+
+    # --- Grating equation ---
     st.subheader("Diffraction Grating Equation")
     st.latex(r"m\lambda = \Lambda \sin(\theta)")
 
-    with st.expander("Diffraction equation details"):
-        st.markdown("Changing pitch Λ shifts diffraction angle θ.")
-        show_grating_diagram()
+    sin_theta = (m_order * lambda_m) / Lambda_m
+    if sin_theta <= 1:
+        theta_rad = np.arcsin(sin_theta)
+        theta_deg = np.degrees(theta_rad)
+    else:
+        theta_rad = None
+        theta_deg = None
 
-    st.write(f"Diffraction angle (m=1): {theta_1}")
-    st.write(f"Angular dispersion: {dtheta_dlambda:.2f} μrad/nm")
-    st.write(f"Tuning range: {delta_lambda:.3f} nm")
+    with st.expander("Show calculation steps (Grating equation)"):
+        st.code(f"""
+sin(θ) = (m*λ)/Λ
+= ({m_order}*{lambda_m:.3e})/({Lambda_m:.3e})
+= {sin_theta:.3e}
 
+θ = asin({sin_theta:.3e})
+= {theta_deg:.4f}°
+        """)
+
+    st.write(f"Diffraction angle (m={m_order}): {theta_deg if theta_deg else 'N/A'}°")
+
+    # --- Order angles table ---
+    st.subheader("Diffraction Angles by Order")
+    order_data = []
+    for m in [0, 1, 2, 3]:
+        if m == 0:
+            order_data.append({"Order m": 0, "sinθ": 0, "θ (deg)": 0})
+        else:
+            s = (m * lambda_m) / Lambda_m
+            if s > 1:
+                order_data.append({"Order m": m, "sinθ": f"{s:.3f}", "θ (deg)": "N/A"})
+            else:
+                order_data.append({"Order m": m, "sinθ": f"{s:.3f}", "θ (deg)": f"{np.degrees(np.arcsin(s)):.3f}"})
+    st.dataframe(pd.DataFrame(order_data), use_container_width=True)
+
+    # --- Pitch change + angle shift ---
+    st.subheader("Pitch Change and Angle Shift")
+    st.write(f"Pitch change factor: {pitch_change_factor:.4f}")
+
+    with st.expander("Show calculation steps (Pitch change + angle shift)"):
+        st.code(f"""
+ΔΛ = x * pitch_change_factor
+= {x_disp:.3e} * {pitch_change_factor:.4f}
+= {pitch_change_m:.3e} m
+
+New pitch = Λ - ΔΛ
+= {Lambda_pitch:.2f} μm - {pitch_change_m*1e6:.3f} μm
+= {new_pitch:.3f} μm
+
+Δθ = θ_new - θ_old
+= {angle_shift_urad:.3f} μrad
+        """)
+
+    st.write(f"Pitch change: {pitch_change_nm:.2f} nm")
+    st.write(f"Angle shift: {angle_shift_urad:.2f} μrad")
+
+    # --- Angular dispersion ---
     st.subheader("Angular Dispersion")
     st.latex(r"\frac{d\theta}{d\lambda} = \frac{m}{\Lambda\cos(\theta)}")
 
-    with st.expander("Angular dispersion explanation"):
-        st.markdown("Smaller Λ or higher order m increases dispersion.")
+    if theta_rad is not None:
+        dtheta_dlambda = (m_order / (Lambda_m * np.cos(theta_rad))) * 1e-9 * 1e6
+    else:
+        dtheta_dlambda = 0
+
+    with st.expander("Show calculation steps (Angular dispersion)"):
+        st.code(f"""
+dθ/dλ = m/(Λ*cosθ)
+= {m_order}/({Lambda_m:.3e}*cos({theta_rad:.3e}))
+= {dtheta_dlambda:.3f} μrad/nm
+        """)
+
+    st.write(f"Angular dispersion: {dtheta_dlambda:.2f} μrad/nm")
+
+    # Linear dispersion on detector
+    linear_disp_um = dtheta_dlambda * L_det  # μm per nm
+    st.write(f"Linear dispersion at 1 cm: {linear_disp_um:.2f} μm/nm")
+
+    # --- Tuning range ---
+    st.subheader("Tuning Range")
+    st.write(f"Δλ = {delta_lambda:.4f} nm")
+
+    with st.expander("Show calculation steps (Tuning range)"):
+        st.code(f"""
+Δλ = (ΔΛ/Λ)*λ
+= ({pitch_change_m:.3e}/{Lambda_m:.3e})*{lambda_m:.3e}
+= {delta_lambda:.3e} nm
+        """)
+
+    # --- Spectral resolution ---
+    st.subheader("Spectral Resolution")
+    st.latex(r"R = mN")
+
+    with st.expander("Show calculation steps (Resolution)"):
+        st.code(f"""
+N = grating_side/Λ
+= {grating_side:.1f} μm / {Lambda_pitch:.2f} μm
+= {N_lines} lines
+
+R = m*N
+= {m_order}*{N_lines}
+= {R}
+
+Δλ_min = λ/R
+= {wavelength:.1f}/{R}
+= {wavelength/R:.4f} nm
+        """)
+
+    st.write(f"Resolving power: R = {R}")
+    st.write(f"Minimum resolvable Δλ: {wavelength/R:.4f} nm")
+
+    # --- Order power split ---
+    st.subheader("Order Power Split (Efficiency)")
+    st.write(f"m=0: {eff_m0:.1f}%  |  m=1: {eff_m1:.1f}%  |  m=2: {eff_m2:.1f}%  |  m=3: {eff_m3:.1f}%")
+    st.write(f"Unaccounted loss: {100 - (eff_m0 + eff_m1 + eff_m2 + eff_m3):.1f}%")
+
 
 with tabs[2]:
     st.subheader("Comb‑Drive Force")
     st.latex(r"F = \frac{n\varepsilon_0 t V^2}{2g}")
 
-    with st.expander("Where the comb‑drive force equation comes from"):
-        st.markdown("Comb‑drive force is lateral: capacitance changes with overlap length.")
-        show_combdrive_diagram()
+    with st.expander("Show calculation steps"):
+        st.code(f"""
+F = (n*ε0*t*V^2)/(2g)
+= ({n_fingers}*{epsilon_0:.3e}*{t_thickness_m:.3e}*{V_applied**2:.1f})/(2*{g_gap_m:.3e})
+= {F_elec:.3e} N
+= {F_elec*1e6:.2f} μN
+        """)
 
     st.write(f"Electrostatic force: {F_elec*1e6:.2f} μN")
     st.write(f"E‑field: {E_field:.2f} MV/m")
+
+    st.subheader("Voltage Needed for Target Displacement")
+    st.latex(r"V = \sqrt{\frac{2Fg}{n\varepsilon_0 t}}")
+
+    with st.expander("Show calculation steps"):
+        target_x = 2.0
+        V_needed = calculate_voltage_for_target_displacement(target_x, k_total, n_fingers, epsilon_0, t_thickness, g_gap)
+        st.code(f"""
+Target x = {target_x} μm
+F = k*x = {k_total:.3e} * {target_x*1e-6:.3e}
+V = sqrt((2*F*g)/(n*ε0*t))
+= {V_needed:.2f} V
+        """)
 
 with tabs[3]:
     st.header("Fabrication Feasibility Analysis")
@@ -548,3 +752,27 @@ with tabs[5]:
 
     st.markdown("---")
     st.markdown("✅ **Ready for copy into report / slides**")
+
+with tabs[6]:
+    st.header("Design Solver (Inverse Design)")
+
+    target_f = st.number_input("Target resonant frequency (Hz)", value=float(f_resonant), step=100.0)
+    target_x = st.number_input("Target displacement (μm)", value=2.0, step=0.1)
+    target_V = st.number_input("Available voltage (V)", value=float(V_applied), step=5.0)
+
+    # Required stiffness for target frequency
+    k_req = (2*np.pi*target_f)**2 * (rho_mass*1e-6)
+    L_req = ((3*E_silicon*w_beam_m*t_thickness_m**3*n_springs)/(4*k_req))**(1/3) * 1e6
+
+    # Required voltage for target displacement
+    V_req = calculate_voltage_for_target_displacement(target_x, k_total, n_fingers, epsilon_0, t_thickness, g_gap)
+
+    # Required finger count if voltage fixed
+    F_req = k_total * (target_x*1e-6)
+    n_req = (2*F_req*g_gap_m)/(epsilon_0*t_thickness_m*target_V**2)
+
+    st.subheader("Recommended Values")
+    st.write(f"Required stiffness for {target_f:.0f} Hz: **{k_req:.2f} N/m**")
+    st.write(f"Recommended beam length: **{L_req:.1f} μm** (with current w, t, n_springs)")
+    st.write(f"Required voltage for {target_x:.1f} μm: **{V_req:.2f} V**")
+    st.write(f"Required finger count for {target_x:.1f} μm at {target_V:.0f} V: **{n_req:.0f} fingers**")

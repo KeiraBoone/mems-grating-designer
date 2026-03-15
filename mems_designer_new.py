@@ -18,7 +18,7 @@ st.set_page_config(
 )
 
 st.title("🔬 MEMS Tunable Diffraction Grating Designer")
-st.markdown("Complete design and analysis tool for MEMS-actuated tunable diffraction gratings")
+st.markdown("Design and analysis tool for MEMS-actuated tunable diffraction gratings made for MIT class 6.2600/3.155: Micro/Nano Processing Technology, Spring 2026")
 
 # ============================================================================
 # MATERIAL PRESETS
@@ -157,22 +157,22 @@ st.sidebar.header("⚙️ Design Parameters")
 st.sidebar.subheader("1️⃣ Comb Drive")
 n_fingers = st.sidebar.slider(
     "Comb finger pairs",
-    min_value=10.0, max_value=1000.0, value=100.0, step=10.0,
+    min_value=10.0, max_value=1000.0, value=200.0, step=10.0,
     help="Number of interlocking finger pairs. More fingers = linearly more electrostatic force."
 )
 V_applied = st.sidebar.slider(
     "Applied voltage (V) - DC or AC Peak",
-    min_value=10.0, max_value=150.0, value=75.0, step=5.0,
+    min_value=10.0, max_value=150.0, value=15.0, step=5.0,
     help="Voltage applied across the comb drive. Force scales with the square of the voltage (V²)."
 )
 g_gap = st.sidebar.slider(
     "Gap between fingers (μm)",
-    min_value=1.0, max_value=10.0, value=3.0, step=0.5,
+    min_value=1.0, max_value=10.0, value=3.5, step=0.5,
     help="Distance between adjacent comb fingers. Instructor minimum is 3 μm to guarantee fabrication clearance. Smaller gaps drastically increase force."
 )
 comb_overlap = st.sidebar.slider(
     "Comb overlap length (μm)",
-    min_value=5.0, max_value=200.0, value=50.0, step=5.0,
+    min_value=5.0, max_value=200.0, value=20.0, step=5.0,
     help="The initial length that the fingers overlap. Determines baseline capacitance."
 )
 finger_width = st.sidebar.slider(
@@ -184,7 +184,7 @@ finger_width = st.sidebar.slider(
 st.sidebar.subheader("2️⃣ Device Body")
 t_thickness = st.sidebar.slider(
     "Device thickness (μm)",
-    min_value=5.0, max_value=50.0, value=20.0, step=5.0,
+    min_value=5.0, max_value=100.0, value=50.0, step=5.0,
     help="Thickness of the SOI device layer. Thicker devices increase mass, force, and out-of-plane stiffness."
 )
 w_widest_moving = st.sidebar.slider(
@@ -194,14 +194,14 @@ w_widest_moving = st.sidebar.slider(
 )
 rho_mass = st.sidebar.slider(
     "Moving mass (mg)",
-    min_value=1.0, max_value=20.0, value=5.0, step=1.0,
+    min_value=0.001, max_value=20.0, value=1.0, step=0.001,
     help="Estimated mass of the central shuttle and grating. Lowers resonant frequency as it increases."
 )
 
 st.sidebar.subheader("3️⃣ Springs")
 L_support = st.sidebar.slider(
     "Support beam length (μm)",
-    min_value=20.0, max_value=500.0, value=100.0, step=10.0,
+    min_value=20.0, max_value=500.0, value=200.0, step=10.0,
     help="Length of the flexures. Stiffness decreases cubically (1/L³) with length."
 )
 w_beam = st.sidebar.slider(
@@ -230,7 +230,7 @@ spring_bending_mode = st.sidebar.selectbox(
 st.sidebar.subheader("4️⃣ Grating Geometry")
 Lambda_pitch = st.sidebar.slider(
     "Grating pitch (μm)",
-    min_value=1.0, max_value=20.0, value=4.0, step=1.0,
+    min_value=1.0, max_value=20.0, value=10.0, step=1.0,
     help="The period of the grating (Λ). Instructor suggested < 12 μm to achieve larger, more easily measurable diffraction angles."
 )
 grating_side = st.sidebar.slider(
@@ -240,7 +240,7 @@ grating_side = st.sidebar.slider(
 )
 pitch_change_factor = st.sidebar.slider(
     "Pitch change factor (ΔΛ / x)",
-    min_value=0.0, max_value=0.2, value=0.0285, step=0.005,
+    min_value=0.0, max_value=0.2, value=0.01, step=0.005,
     help="Coupling ratio: how much the grating pitch changes per 1 μm of shuttle displacement."
 )
 duty_cycle = st.sidebar.slider(
@@ -257,7 +257,7 @@ incidence_angle_deg = st.sidebar.slider(
 )
 wavelength = st.sidebar.slider(
     "Target wavelength (nm)",
-    min_value=400.0, max_value=2000.0, value=632.0, step=10.0,
+    min_value=400.0, max_value=2000.0, value=632.80, step=0.01,
     help="Wavelength of the test laser. 632 nm is standard for a red HeNe lab laser."
 )
 m_order = st.sidebar.selectbox(
@@ -267,24 +267,24 @@ m_order = st.sidebar.selectbox(
 )
 detector_distance_cm = st.sidebar.slider(
     "Detector distance (cm)",
-    min_value=0.5, max_value=20.0, value=1.0, step=0.5,
+    min_value=0.5, max_value=200.0, value=10.0, step=0.5,
     help="Distance from the grating to the camera/screen where you are measuring the spots."
 )
 incident_power_mW = st.sidebar.slider(
     "Incident optical power (mW)",
-    min_value=0.1, max_value=50.0, value=5.0, step=0.1,
+    min_value=0.1, max_value=50.0, value=1.0, step=0.1,
     help="Power of your input laser. Used to calculate the optical power split between diffraction orders."
 )
 reflectivity = st.sidebar.slider(
     "Reflectivity factor",
-    min_value=0.1, max_value=1.0, value=0.9, step=0.05,
+    min_value=0.1, max_value=1.0, value=0.3, step=0.05,
     help="Percentage of light reflected by the device surface (e.g., bare silicon vs. aluminum coated)."
 )
 
 st.sidebar.subheader("6️⃣ Dynamics & Models")
 Q_assumed = st.sidebar.slider(
     "Assumed quality factor Q",
-    min_value=1.0, max_value=200.0, value=30.0, step=1.0,
+    min_value=1.0, max_value=200.0, value=50.0, step=1.0,
     help="Sharpness of resonance. At resonant frequency, AC displacement is roughly Q times the static DC displacement."
 )
 modal_mass_factor = st.sidebar.slider(

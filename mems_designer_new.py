@@ -584,18 +584,7 @@ st.divider()
 # TABS 0–3 (FULL, EXPANDED)
 # ============================================================================
 
-tabs = st.tabs([
-    "Mechanical",
-    "Optical",
-    "Electrical",
-    "Fabrication",
-    "Validation",
-    "Summary",
-    "Design Solver",
-    "Beam & Measurement",
-    "Sensitivity & Error Budget",
-    "Gaussian Beam Optics"
-])
+tabs = st.tabs(["Mechanical", "Optical", "Electrical", "Fabrication", "Validation", "Summary", "Design Solver", "Beam & Measurement", "Sensitivity & Error Budget", "Gaussian Beam Optics", "Gravity & Sag"])
 
 # -------------------------
 # TAB 0: Mechanical
@@ -1289,3 +1278,116 @@ F = [erf(G/(√2 w_g))]^2
 = {frac:.3f}
 P_on_grating = {P_on_grating*1e3:.2f} mW
     """)
+
+# -------------------------
+# TAB 10: Gravity, Sag & Out-of-Plane Mechanics
+# -------------------------
+with tabs[10]:
+    st.header("Out-of-Plane Mechanics (Gravity & Sag)")
+    st.markdown("""
+    This section analyzes the out-of-plane ($z$-axis) mechanical properties of the suspended grating. 
+    Because the structural beams have a high aspect ratio ($t \gg w$), the out-of-plane stiffness is significantly higher than the in-plane driving stiffness.
+    """)
+
+    # --- Math Setup ---
+    g_accel = 9.81 # m/s^2
+    mass_kg = mass_kg = rho_mass * 1e-6
+    F_gravity = mass_kg * g_accel
+    
+    # Area moment of inertia for out-of-plane bending (z-axis)
+    I_z = (w_beam_m * (t_thickness_m**3)) / 12.0
+    
+    # Assuming the same beam bending model as Tab 0 (e.g., 3EI/L^3)
+    k_z_single = (3.0 * E_silicon * I_z) / (L_support_m**3) 
+    k_z_total = k_z_single * n_springs
+    
+    # Ratio of out-of-plane to in-plane stiffness
+    # Using k_total from Tab 0
+    stiffness_ratio = k_z_total / k_total if k_total > 0 else 0
+    
+    # Sag displacement
+    sag_z_m = F_gravity / k_z_total if k_z_total > 0 else 0
+    sag_z_nm = sag_z_m * 1e9
+    
+    # Out-of-plane resonant frequency
+    import math
+    f_z_res = (1.0 / (2.0 * math.pi)) * math.sqrt(k_z_total / mass_kg) if mass_kg > 0 else 0
+    
+    # Out-of-plane max stress from gravity (M*c/I)
+    # M_max = (F/n) * L (assuming cantilever model matching 3EI/L^3)
+    c_z = t_thickness_m / 2.0
+    M_max_z = (F_gravity / n_springs) * L_support_m
+    sigma_z_grav = (M_max_z * c_z) / I_z if I_z > 0 else 0
+
+    # --- UI Layout ---
+    
+    st.subheader("1) Vertical Moment of Inertia & Stiffness")
+    st.latex(r"I_z = \frac{w t^3}{12}, \quad k_{z, single} = \frac{3 E I_z}{L^3}, \quad k_{z, total} = k_{z, single} \times n_{springs}")
+    
+    st.expander("Show all work (Stiffness)", expanded=False).code(f"""
+E = {E_silicon:.3e} Pa
+w = {w_beam_m:.3e} m
+t = {t_thickness_m:.3e} m
+L = {L_support_m:.3e} m
+
+I_z = (w * t^3) / 12 
+    = ({w_beam_m:.3e} * ({t_thickness_m:.3e})^3) / 12
+    = {I_z:.3e} m^4
+
+k_z_single = 3 * E * I_z / L^3 
+           = 3 * {E_silicon:.3e} * {I_z:.3e} / ({L_support_m:.3e})^3 
+           = {k_z_single:.3e} N/m
+
+k_z_total  = {k_z_single:.3e} * {n_springs:.0f} 
+           = {k_z_total:.3e} N/m
+
+Stiffness Ratio (k_z / k_x) = {stiffness_ratio:.1f}x stiffer out-of-plane
+    """)
+
+    st.subheader("2) Gravitational Sag Displacement")
+    st.latex(r"F_g = m \cdot g, \quad \delta_z = \frac{F_g}{k_{z, total}}")
+    
+    st.expander("Show all work (Sag Calculation)", expanded=False).code(f"""
+m = {mass_kg:.3e} kg
+g = 9.81 m/s^2
+F_g = m * g = {F_gravity:.3e} N
+
+δ_z = F_g / k_z_total
+    = {F_gravity:.3e} N / {k_z_total:.3e} N/m
+    = {sag_z_m:.3e} m
+    = {sag_z_nm:.6f} nm
+    """)
+
+    st.subheader("3) Out-of-Plane Frequency & Gravity Stress")
+    st.latex(r"f_z = \frac{1}{2\pi}\sqrt{\frac{k_{z, total}}{m}}, \quad \sigma_z = \frac{M_{max} c}{I_z}")
+
+    st.expander("Show all work (Frequency & Stress)", expanded=False).code(f"""
+--- Out-of-Plane Resonance ---
+f_z = (1/2π) * sqrt({k_z_total:.3e} / {mass_kg:.3e})
+    = {f_z_res:.2f} Hz
+
+--- Stress Due to Gravity ---
+M_max (per spring) = (F_g / n) * L = {M_max_z:.3e} N*m
+c (distance to neutral axis) = t / 2 = {c_z:.3e} m
+σ_z = (M_max * c) / I_z = {sigma_z_grav:.3e} Pa 
+    = {sigma_z_grav / 1e3:.6f} kPa 
+(Note: Yield strength of Si is ~7 GPa. Gravity stress is negligible.)
+    """)
+
+    st.markdown("---")
+    st.markdown(f"### **Final Out-of-Plane Sag:** {sag_z_nm:.4f} nm")
+    st.markdown(f"### **Out-of-Plane Resonant Frequency:** {f_z_res/1000:.2f} kHz")
+    
+    # Automated Safety Analysis
+    st.markdown("#### **Safety Analysis**")
+    if sag_z_nm < 50.0:
+        st.success(f"**PASS:** Gravitational sag ({sag_z_nm:.2f} nm) is extremely small. The device is safe from bottoming out on a standard 2 μm (2000 nm) sacrificial oxide layer.")
+    elif sag_z_nm < 500.0:
+        st.warning(f"**WARNING:** Gravitational sag ({sag_z_nm:.2f} nm) is noticeable. Ensure your sacrificial release layer is sufficiently thick.")
+    else:
+        st.error(f"**FAIL:** Severe sagging detected ({sag_z_nm:.2f} nm). The structure will likely touch the handle wafer and fail due to stiction.")
+
+    if f_z_res > (f_res * 2.0):
+        st.success(f"**PASS:** Out-of-plane frequency ({f_z_res/1000:.2f} kHz) is well separated from the lateral driving frequency. No cross-axis mode coupling is expected.")
+    else:
+        st.error(f"**FAIL:** Out-of-plane frequency is too close to the lateral driving frequency. The device may become unstable and vibrate vertically.")
